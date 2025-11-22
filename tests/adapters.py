@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import math
+
 import os
 from typing import Any, Callable, Literal
 
 import torch
+from scipy.special import logsumexp
 from torch import Tensor
 from torch._refs import add_
 from torch.utils.data import Dataset
@@ -120,7 +123,22 @@ def run_compute_group_normalized_rewards(
 
 def run_compute_entropy(logits: torch.Tensor) -> torch.Tensor:
     """Get the entropy of the logits (i.e., entropy of the final dimension)."""
-    raise NotImplementedError
+    print(f"{logits.shape}")
+    batch_entropies = []
+    for batch_idx in range(logits.shape[0]):
+        seq_entropies = []
+        for token_idx in range(logits.shape[1]):
+            token_entropy = 0
+            logits_tensor = logits[batch_idx, token_idx]
+            denum_log = logsumexp(logits_tensor)
+            for x in logits_tensor:
+                num = math.exp(x)
+                p = num / math.exp(denum_log)
+                entropy = -p * (x - denum_log)
+                token_entropy += entropy
+            seq_entropies.append(token_entropy)
+        batch_entropies.append(torch.tensor(seq_entropies))
+    return torch.stack(batch_entropies)
 
 
 def run_get_response_log_probs(
