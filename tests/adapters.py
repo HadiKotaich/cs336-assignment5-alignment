@@ -260,7 +260,13 @@ def run_sft_microbatch_train_step(
     normalize_constant: int | None = 1.0,
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
     """Compute the policy gradient loss and backprop its gradients for a microbatch."""
-    raise NotImplementedError
+    loss = run_masked_normalize(
+        policy_log_probs, response_mask, normalize_constant=normalize_constant
+    )
+    batch_size = policy_log_probs.shape[0]
+    loss = -loss / batch_size / gradient_accumulation_steps
+    loss.backward()
+    return loss, {"loss": loss.detach()}
 
 
 def run_grpo_microbatch_train_step(
