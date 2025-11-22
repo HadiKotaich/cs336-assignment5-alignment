@@ -469,3 +469,33 @@ def run_compute_per_instance_dpo_loss(
         torch.Tensor with the DPO loss for this example.
     """
     raise NotImplementedError
+
+
+def log_generations(
+    input_prompt: str,
+    response: str,
+    ground_truth: str,
+    format_reward: float,
+    answer_reward: float,
+    total_reward: float,
+    average_token_entropy: float,
+    average_response_lenght_correct: float,
+    average_response_lenght_incorrect: float,
+) -> None:
+    """
+    log the generations
+    """
+    with open("generations.txt", "a") as f:
+        f.write(f"Input Prompt: {input_prompt}\n")
+        f.write(f"Response: {response}\n")
+        f.write(f"Ground Truth: {ground_truth}\n")
+        f.write(f"Format Reward: {format_reward}\n")
+        f.write(f"Answer Reward: {answer_reward}\n")
+        f.write(f"Total Reward: {total_reward}\n")
+        f.write(f"Average Token Entropy: {average_token_entropy}\n")
+        f.write(f"Average Response Lenght Correct: {average_response_lenght_correct}\n")
+        f.write(
+            f"Average Response Lenght Incorrect: {average_response_lenght_incorrect}\n"
+        )
+        f.write("\n")
+        f.close()
