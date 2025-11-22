@@ -324,7 +324,8 @@ def run_masked_normalize(
         torch.Tensor, the normalized sum, where masked elements
             (mask=0) don't contribute to the sum.
     """
-    raise NotImplementedError
+    masked_tensor = tensor * mask
+    return torch.sum(masked_tensor, dim=dim) / normalize_constant
 
 
 """
