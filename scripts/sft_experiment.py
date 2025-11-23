@@ -1,8 +1,8 @@
+import os
 from unittest.mock import patch
 
 import torch
 import wandb
-
 from scripts.evaluate_baseline import evaluate_vllm
 from scripts.load_sft_data import get_sft_dataloader
 from tests import adapters
@@ -15,7 +15,12 @@ from vllm.model_executor import set_random_seed as vllm_set_random_seed
 EVAL_DIR = "/data/users/hadikotaich/cs336-assignment5-alignment/eval_results/sft/"
 
 
-def init_vllm(model_id: str, seed: int, gpu_memory_utilization: float = 0.85) -> LLM:
+def init_vllm(
+    model_id: str,
+    seed: int,
+    gpu_memory_utilization: float = 0.85,
+    tensor_parallel_size: int = 1,
+) -> LLM:
     """
     Start the inference process, here we use vLLM to hold a model on
     a GPU separate from the policy.
@@ -39,6 +44,7 @@ def init_vllm(model_id: str, seed: int, gpu_memory_utilization: float = 0.85) ->
             dtype=torch.bfloat16,
             enable_prefix_caching=True,
             gpu_memory_utilization=gpu_memory_utilization,
+            tensor_parallel_size=tensor_parallel_size,
         )
 
 
@@ -66,13 +72,16 @@ def run_sft(
     model_id = (
         "/data/users/hadikotaich/cs336-assignment5-alignment/models/Qwen2.5-Math-1.5B"
     )
+    # Use cuda:0 for vLLM (physical GPU 1 when CUDA_VISIBLE_DEVICES=1,2)
     vllm = init_vllm(
         model_id=model_id,
         seed=42,
-        gpu_memory_utilization=0.85,
+        gpu_memory_utilization=0.75,
+        tensor_parallel_size=1,
     )
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # Use cuda:1 for training model (physical GPU 2 when CUDA_VISIBLE_DEVICES=1,2)
+    device = torch.device("cuda:1" if torch.cuda.device_count() > 1 else "cuda")
     model = AutoModelForCausalLM.from_pretrained(
         model_id,
         torch_dtype=torch.bfloat16,
@@ -80,6 +89,12 @@ def run_sft(
     ).to(device)
     tokenizer = AutoTokenizer.from_pretrained(
         model_id,
+    )
+    optimizer = torch.optim.AdamW(
+        model.parameters(),
+        lr=learning_rate,
+        weight_decay=0.0,
+        betas=(0.9, 0.95),
     )
 
     # not sure if we need this but why not
@@ -107,8 +122,11 @@ def run_sft(
             output_strs=responses,
         )
 
-        if idx == 0:
-            print(f"tokenization_result: {tokenization_result}")
+        # Move all tensors to the same device as the model
+        tokenization_result = {
+            k: v.to(device) if isinstance(v, torch.Tensor) else v
+            for k, v in tokenization_result.items()
+        }
 
         log_probs = adapters.run_get_response_log_probs(
             model=model,
@@ -126,8 +144,8 @@ def run_sft(
         print(f"loss norm: {torch.norm(loss)}")
 
         if (idx + 1) % gradient_accumulation_steps == 0:
-            model.optimizer.step()
-            model.optimizer.zero_grad()
+            optimizer.step()
+            optimizer.zero_grad()
 
         if (idx + 1) % eval_frequency == 0:
             load_policy_into_vllm_instance(model, vllm)
@@ -135,6 +153,13 @@ def run_sft(
                 vllm,
                 output_path=f"{EVAL_DIR}/{run_id}/eval_{idx}.jsonl",
             )
+
+    model_name = os.path.basename(model_id)
+    save_dir = os.path.join(os.path.dirname(model_id), f"{model_name}-sft-{run_id}")
+    print(f"Saving final model to {save_dir}")
+    model.save_pretrained(save_dir)
+    tokenizer.save_pretrained(save_dir)
+    print(f"Model saved successfully to {save_dir}")
 
 
 if __name__ == "__main__":
