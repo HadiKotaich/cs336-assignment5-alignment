@@ -167,9 +167,9 @@ def run_sft(
 
 if __name__ == "__main__":
     run_sft(
-        training_data_size=512,
+        training_data_size=4096,
         learning_rate=0.0001,
         batch_size=10,
-        eval_frequency=16,
+        eval_frequency=32,
         eval_before_train=True,
     )
