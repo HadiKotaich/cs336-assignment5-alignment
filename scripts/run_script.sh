@@ -17,5 +17,9 @@ if [ -z "$CUDA_VISIBLE_DEVICES" ]; then
 fi
 export LD_PRELOAD="$PROJECT_DIR/.venv/lib/python3.12/site-packages/nvidia/cublas/lib/libcublas.so.12"
 
+# Add project root to PYTHONPATH so scripts.* and tests.* imports work
+export PYTHONPATH="$PROJECT_DIR:$PYTHONPATH"
+
 source "$PROJECT_DIR/.venv/bin/activate"
+
 with-proxy python "$@"

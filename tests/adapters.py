@@ -162,6 +162,11 @@ def run_get_response_log_probs(
                 we have not masked out the token indices corresponding to the prompt
                 or padding; that is done in the train loop.
     """
+    # Move tensors to the same device as the model
+    device = next(model.parameters()).device
+    input_ids = input_ids.to(device)
+    labels = labels.to(device)
+
     logits = model(input_ids).logits
     log_p = F.log_softmax(logits, dim=-1)  # (B, T, V)
     log_probs = log_p.gather(-1, labels.unsqueeze(-1)).squeeze(-1)  # (B, T)

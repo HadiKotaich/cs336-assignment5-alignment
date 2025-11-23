@@ -51,7 +51,8 @@ def get_prompts(questions: list[str]) -> list[str]:
     return [prompt.format(question=q) for q in questions]
 
 
-def evaluate_vllm(vllm: LLM) -> None:
+def evaluate_vllm(vllm: LLM, output_path: str) -> None:
+    print(f"Evaluating VLLM with output path {output_path}")
     data_rows: list[DataRow] = get_gsm8k_data(split="test")
     prompts: list[str] = get_prompts([row.question for row in data_rows])
     ground_truths: list[str] = [extract_gsm8k_answer(row.answer) for row in data_rows]
@@ -64,11 +65,12 @@ def evaluate_vllm(vllm: LLM) -> None:
     )
 
     _evaluate_vllm(
-        vllm_model=model,
+        vllm_model=vllm,
         reward_fn=r1_zero_reward_fn,
         prompts=prompts,
         ground_truths=ground_truths,
         eval_sampling_params=sampling_params,
+        output_path=output_path,
     )
 
 
@@ -78,6 +80,7 @@ def _evaluate_vllm(
     prompts: List[str],
     ground_truths: List[str],
     eval_sampling_params: SamplingParams,
+    output_path: str,
 ) -> None:
     """
     Evaluate a language model on a list of prompts,
@@ -91,8 +94,14 @@ def _evaluate_vllm(
     outputs: list[RequestOutput] = vllm_model.generate(prompts, eval_sampling_params)
     generation_latency = time.time() - start_time
 
+    # Create output directory if it doesn't exist
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+
     start_time = time.time()
-    with open("eval_results/baseline_metrics.jsonl", "w") as fout:
+    with open(
+        output_path,
+        "w",
+    ) as fout:
         for prompt, ground_truth, output in zip(prompts, ground_truths, outputs):
             response = output.outputs[0].text
 
@@ -128,6 +137,10 @@ def extract_gsm8k_answer(gsm8k_answer: str) -> str:
 def main():
     # qwen3_1_7b = LLM(model="Qwen/Qwen3-1.7B")
     model = LLM(model="Qwen/Qwen2.5-1.5B")
+    evaluate_vllm(
+        model,
+        output_path="/data/users/hadikotaich/cs336-assignment5-alignment/eval_results/baseline_metrics.jsonl",
+    )
 
 
 if __name__ == "__main__":
