@@ -14,7 +14,7 @@ wandb.define_metric("eval/*", step_metric="eval_step")
 
 def init_vllm(
     model_id: str, device: str, seed: int, gpu_memory_utilization: float = 0.85
-):
+) -> LLM:
     """
     Start the inference process, here we use vLLM to hold a model on
     a GPU separate from the policy.
@@ -50,3 +50,12 @@ def load_policy_into_vllm_instance(policy: PreTrainedModel, llm: LLM):
     state_dict = policy.state_dict()
     llm_model = llm.llm_engine.model_executor.driver_worker.model_runner.model
     llm_model.load_weights(state_dict.items())
+
+
+def run_sft():
+    vllm = init_vllm(
+        model_id="Qwen/Qwen2.5-Math-1.5B",
+        device="cuda:",
+        seed=42,
+        gpu_memory_utilization=0.85,
+    )
