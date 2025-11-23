@@ -1,21 +1,38 @@
 import re
+from pathlib import Path
 
 from datasets import load_dataset
 from torch.utils.data import DataLoader, Dataset
 
 
-def clean_response(response: str) -> str:
-    """Remove the 'The answer is: X' suffix from MetaMathQA responses.
+def get_prompt_template() -> str:
+    """Load the prompt template used for evaluation."""
+    prompt_path = (
+        Path(__file__).parent.parent / "cs336_alignment" / "prompts" / "r1_zero.prompt"
+    )
+    with open(prompt_path) as f:
+        return f.read()
+
+
+def format_response(raw_response: str) -> str:
+    """Convert MetaMathQA response to <think> ... </think> <answer> ... </answer> format.
 
     Args:
-        response: Raw response from the dataset
+        raw_response: Raw response from MetaMathQA, expected to have #### marker
 
     Returns:
-        Cleaned response without the 'The answer is:' suffix, but keeping '####'
+        Formatted response with <think> and <answer> tags
     """
-    # Remove only the "The answer is: X" line at the end, keep the "####" part
-    response = re.sub(r"\s*The answer is:.*$", "", response, flags=re.MULTILINE)
-    return response.strip()
+    # Split on #### to separate reasoning from answer
+    if "####" not in raw_response:
+        raise ValueError("Response must contain #### marker")
+
+    parts = raw_response.split("####")
+    reasoning = parts[0].strip()
+    answer = parts[1].strip()
+
+    # Format as: reasoning </think> <answer> answer </answer>
+    return f"{reasoning} </think> <answer> {answer} </answer>"
 
 
 class SFTDataset(Dataset):
@@ -29,6 +46,7 @@ class SFTDataset(Dataset):
         """
         dataset = load_dataset("meta-math/MetaMathQA")
         train_data = dataset["train"]
+        prompt_template = get_prompt_template()
 
         self.data = []
         count = 0
@@ -36,22 +54,32 @@ class SFTDataset(Dataset):
             if count >= num_rows:
                 break
 
-            # MetaMathQA has 'query' and 'response' fields
-            row_id = row.get("id", str(i))
-            cleaned_response = clean_response(row["response"])
-
             # Skip rows where response doesn't have ####
-            if "####" not in cleaned_response:
+            if "####" not in row["response"]:
                 continue
 
-            self.data.append(
-                {
-                    "id": row_id,
-                    "prompt": row["query"],
-                    "response": cleaned_response,
-                }
-            )
-            count += 1
+            try:
+                # MetaMathQA has 'query' and 'response' fields
+                row_id = row.get("id", str(i))
+                question = row["query"]
+
+                # Format prompt to match evaluation format
+                formatted_prompt = prompt_template.format(question=question)
+
+                # Format response with <think> and <answer> tags
+                formatted_response = format_response(row["response"])
+
+                self.data.append(
+                    {
+                        "id": row_id,
+                        "prompt": formatted_prompt,
+                        "response": formatted_response,
+                    }
+                )
+                count += 1
+            except (ValueError, KeyError) as e:
+                # Skip rows that can't be properly formatted
+                continue
 
     def __len__(self) -> int:
         return len(self.data)
