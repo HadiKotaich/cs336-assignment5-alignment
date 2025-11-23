@@ -51,7 +51,28 @@ def get_prompts(questions: list[str]) -> list[str]:
     return [prompt.format(question=q) for q in questions]
 
 
-def evaluate_vllm(
+def evaluate_vllm(vllm: LLM) -> None:
+    data_rows: list[DataRow] = get_gsm8k_data(split="test")
+    prompts: list[str] = get_prompts([row.question for row in data_rows])
+    ground_truths: list[str] = [extract_gsm8k_answer(row.answer) for row in data_rows]
+    sampling_params = SamplingParams(
+        temperature=1.0,
+        top_p=1.0,
+        max_tokens=1024,
+        stop=["</answer>"],
+        include_stop_str_in_output=True,
+    )
+
+    _evaluate_vllm(
+        vllm_model=model,
+        reward_fn=r1_zero_reward_fn,
+        prompts=prompts,
+        ground_truths=ground_truths,
+        eval_sampling_params=sampling_params,
+    )
+
+
+def _evaluate_vllm(
     vllm_model: LLM,
     reward_fn: Callable[[str, str], dict[str, float]],
     prompts: List[str],
@@ -107,24 +128,6 @@ def extract_gsm8k_answer(gsm8k_answer: str) -> str:
 def main():
     # qwen3_1_7b = LLM(model="Qwen/Qwen3-1.7B")
     model = LLM(model="Qwen/Qwen2.5-1.5B")
-    data_rows: list[DataRow] = get_gsm8k_data(split="test")
-    prompts: list[str] = get_prompts([row.question for row in data_rows])
-    ground_truths: list[str] = [extract_gsm8k_answer(row.answer) for row in data_rows]
-    sampling_params = SamplingParams(
-        temperature=1.0,
-        top_p=1.0,
-        max_tokens=1024,
-        stop=["</answer>"],
-        include_stop_str_in_output=True,
-    )
-
-    evaluate_vllm(
-        vllm_model=model,
-        reward_fn=r1_zero_reward_fn,
-        prompts=prompts,
-        ground_truths=ground_truths,
-        eval_sampling_params=sampling_params,
-    )
 
 
 if __name__ == "__main__":
