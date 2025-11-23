@@ -29,10 +29,13 @@ def format_response(raw_response: str) -> str:
 
     parts = raw_response.split("####")
     reasoning = parts[0].strip()
-    answer = parts[1].strip()
+    answer_full = parts[1].strip()
 
-    # Format as: reasoning </think> <answer> answer </answer>
-    return f"{reasoning} </think> <answer> {answer} </answer>"
+    # Extract just the numeric answer (first line before "The answer is:")
+    answer = answer_full.split("\n")[0].strip()
+
+    # Format as: <think>reasoning</think> <answer>answer</answer>
+    return f"<think>\n{reasoning}\n</think> <answer>{answer}</answer>"
 
 
 class SFTDataset(Dataset):

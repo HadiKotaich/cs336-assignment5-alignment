@@ -66,7 +66,10 @@ def run_sft(
     eval_before_train: bool = False,
     gradient_accumulation_steps: int = 1,
 ):
-    run_id = wandb.util.generate_id()
+    run_id = (
+        f"sft_sz{training_data_size}_lr_{learning_rate}_bs_{batch_size}_"
+        + wandb.util.generate_id()
+    )
     wandb.init(project="sft", id=run_id)
     print(f"run_id: {run_id}")
     model_id = (
@@ -164,9 +167,9 @@ def run_sft(
 
 if __name__ == "__main__":
     run_sft(
-        training_data_size=128,
+        training_data_size=512,
         learning_rate=0.0001,
-        batch_size=5,
-        eval_frequency=8,
+        batch_size=10,
+        eval_frequency=16,
         eval_before_train=True,
     )
