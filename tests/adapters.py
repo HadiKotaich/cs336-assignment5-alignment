@@ -252,7 +252,10 @@ def run_compute_grpo_clip_loss(
             dict[str, torch.Tensor]: metadata for the GRPO-Clip loss
                 (used to compute clip fraction).
     """
-    raise NotImplementedError
+    ratio = torch.exp(policy_log_probs - old_log_probs)
+    clipped_ratio = torch.clamp(ratio, 1 - cliprange, 1 + cliprange)
+    loss = -torch.min(ratio * advantages, clipped_ratio * advantages)
+    return loss, {}
 
 
 def run_compute_policy_gradient_loss(
