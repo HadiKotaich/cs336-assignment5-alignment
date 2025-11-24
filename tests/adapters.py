@@ -163,12 +163,24 @@ def run_get_response_log_probs(
                 or padding; that is done in the train loop.
     """
     logits = model(input_ids).logits
-    log_p = F.log_softmax(logits, dim=-1)  # (B, T, V)
-    log_probs = log_p.gather(-1, labels.unsqueeze(-1)).squeeze(-1)  # (B, T)
-    res = {"log_probs": log_probs}
+
     if return_token_entropy:
+        # Need full log_softmax for entropy calculation
+        log_p = F.log_softmax(logits, dim=-1)  # (B, T, V)
+        log_probs = log_p.gather(-1, labels.unsqueeze(-1)).squeeze(-1)  # (B, T)
         token_entropy = run_compute_entropy(logits)
-        res["token_entropy"] = token_entropy
+        res = {"log_probs": log_probs, "token_entropy": token_entropy}
+    else:
+        # Memory-efficient version: avoid materializing full log_softmax
+        # Extract the specific logits we need first
+        selected_logits = logits.gather(-1, labels.unsqueeze(-1)).squeeze(-1)  # (B, T)
+        # Compute just the normalization term
+        logsumexp = torch.logsumexp(logits, dim=-1)  # (B, T)
+        del logits  # Free memory immediately
+        # Compute log probs: log(p) = logit - logsumexp
+        log_probs = selected_logits - logsumexp  # (B, T)
+        res = {"log_probs": log_probs}
+
     return res
 
 

@@ -99,6 +99,7 @@ def run_sft(
         weight_decay=0.0,
         betas=(0.9, 0.95),
     )
+    optimizer.zero_grad()
 
     # not sure if we need this but why not
     load_policy_into_vllm_instance(model, vllm)
@@ -114,6 +115,9 @@ def run_sft(
     data_loader = get_sft_dataloader(
         num_rows=training_data_size, batch_size=batch_size, shuffle=False
     )
+
+    # Clear any residual gradients before training
+    optimizer.zero_grad()
 
     for idx, batch in enumerate(data_loader):
         prompts = batch["prompt"]
@@ -147,6 +151,7 @@ def run_sft(
         print(f"loss norm: {torch.norm(loss)}")
 
         if (idx + 1) % gradient_accumulation_steps == 0:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
             optimizer.zero_grad()
 
@@ -167,9 +172,10 @@ def run_sft(
 
 if __name__ == "__main__":
     run_sft(
-        training_data_size=4096,
+        training_data_size=16384,
         learning_rate=0.0001,
-        batch_size=10,
-        eval_frequency=32,
+        batch_size=2,  # Microbatch size (actual samples processed at once)
+        eval_frequency=256,
         eval_before_train=True,
+        gradient_accumulation_steps=8,  # Accumulate 8 microbatches → effective batch size = 2 * 8 = 16
     )
