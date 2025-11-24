@@ -41,6 +41,7 @@ def run_expert_iteration() -> None:
     expert_iteration_batch = 1024
     sft_batch_size = 8
     learning_rate = 0.0001
+    rollouts = 8
     run_id = (
         f"ei_sz{training_data_size}_lr_{learning_rate}_eibs_{expert_iteration_batch}_sftbs_{sft_batch_size}"
         + wandb.util.generate_id()
@@ -91,43 +92,44 @@ def run_expert_iteration() -> None:
         ground_truths = batch["response"]
         # generate model output
         print(f"generating outputs for batch with index {idx}")
-        outputs: list[RequestOutput] = vllm.generate(prompts, sampling_params)
-        sft_data = []
-        for rowd_id, prompt, output, ground_truth in zip(
-            ids, prompts, outputs, ground_truths
-        ):
-            # Extract ground truth answer from between <answer> and </answer> tags
-            if "<answer>" in ground_truth and "</answer>" in ground_truth:
-                ground_truth = (
-                    ground_truth.split("<answer>")[-1].split("</answer>")[0].strip()
-                )
-            output_text = output.outputs[0].text
-            metrics = r1_zero_reward_fn(output_text, ground_truth)
+        for _ in range(rollouts):
+            outputs: list[RequestOutput] = vllm.generate(prompts, sampling_params)
+            sft_data = []
+            for rowd_id, prompt, output, ground_truth in zip(
+                ids, prompts, outputs, ground_truths
+            ):
+                # Extract ground truth answer from between <answer> and </answer> tags
+                if "<answer>" in ground_truth and "</answer>" in ground_truth:
+                    ground_truth = (
+                        ground_truth.split("<answer>")[-1].split("</answer>")[0].strip()
+                    )
+                output_text = output.outputs[0].text
+                metrics = r1_zero_reward_fn(output_text, ground_truth)
 
-            # Save all results for analysis
-            batch_results.append(
-                {
-                    "id": rowd_id,
-                    "prompt": prompt,
-                    "output": output_text,
-                    "ground_truth": ground_truth,
-                    "metrics": metrics,
-                }
-            )
-
-            # print(f"{output_text=}")
-            # print(f"{ground_truth=}")
-            # print(f"{metrics=}")
-            reward = metrics["reward"]
-            if reward > 0:
-                # found good training data
-                sft_data.append(
+                # Save all results for analysis
+                batch_results.append(
                     {
                         "id": rowd_id,
                         "prompt": prompt,
-                        "response": output_text,
+                        "output": output_text,
+                        "ground_truth": ground_truth,
+                        "metrics": metrics,
                     }
                 )
+
+                # print(f"{output_text=}")
+                # print(f"{ground_truth=}")
+                # print(f"{metrics=}")
+                reward = metrics["reward"]
+                if reward > 0:
+                    # found good training data
+                    sft_data.append(
+                        {
+                            "id": rowd_id,
+                            "prompt": prompt,
+                            "response": output_text,
+                        }
+                    )
         # Print summary statistics
         all_results.extend(batch_results)
         total = len(batch_results)
