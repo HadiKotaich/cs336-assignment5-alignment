@@ -119,7 +119,32 @@ def run_compute_group_normalized_rewards(
                 You may choose what you wish to log here
                 (some statistics of the rewards, etc.).
     """
-    raise NotImplementedError
+    idx = 0
+    group_to_rewards = []
+    group_to_advantages = []
+    for response, ground_truth in zip(rollout_responses, repeated_ground_truths):
+        if idx % group_size == 0:
+            group_to_rewards.append([])
+        reward = reward_fn(response, ground_truth)
+        group_to_rewards[-1].append(reward["reward"])
+        idx += 1
+
+    group_to_rewards = [
+        torch.tensor(group_rewards) for group_rewards in group_to_rewards
+    ]
+
+    for group_rewards in group_to_rewards:
+        if normalize_by_std:
+            group_advantages = (group_rewards - group_rewards.mean()) / (
+                group_rewards.std() + advantage_eps
+            )
+        else:
+            group_advantages = group_rewards - group_rewards.mean()
+        group_to_advantages.append(group_advantages)
+
+    group_rewards = torch.cat(group_to_rewards)
+    group_advantages = torch.cat(group_to_advantages)
+    return group_advantages, group_rewards, {}
 
 
 def run_compute_entropy(logits: torch.Tensor) -> torch.Tensor:
