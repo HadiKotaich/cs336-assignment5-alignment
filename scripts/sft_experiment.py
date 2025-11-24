@@ -6,6 +6,7 @@ import wandb
 from scripts.evaluate_baseline import evaluate_vllm
 from scripts.load_sft_data import get_sft_dataloader
 from tests import adapters
+from torch.utils.data import DataLoader
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers.modeling_utils import PreTrainedModel
 from vllm.entrypoints.llm import LLM
@@ -59,37 +60,32 @@ def load_policy_into_vllm_instance(policy: PreTrainedModel, llm: LLM):
 
 
 def run_sft(
-    training_data_size: int,
+    model: PreTrainedModel,
+    data_loader: DataLoader,
+    model_id: str,
+    run_id: str,
     learning_rate: float,
-    batch_size: int,
-    eval_frequency: int,
+    eval_frequency: int,  # zero for no eval
     eval_before_train: bool = False,
     gradient_accumulation_steps: int = 1,
 ):
-    run_id = (
-        f"sft_sz{training_data_size}_lr_{learning_rate}_bs_{batch_size}_"
-        + wandb.util.generate_id()
-    )
     wandb.init(project="sft", id=run_id)
     print(f"run_id: {run_id}")
-    model_id = (
-        "/data/users/hadikotaich/cs336-assignment5-alignment/models/Qwen2.5-Math-1.5B"
-    )
-    # Use cuda:0 for vLLM (physical GPU 1 when CUDA_VISIBLE_DEVICES=1,2)
-    vllm = init_vllm(
-        model_id=model_id,
-        seed=42,
-        gpu_memory_utilization=0.75,
-        tensor_parallel_size=1,
-    )
+    if eval_before_train or eval_frequency > 0:
+        # Use cuda:0 for vLLM (physical GPU 1 when CUDA_VISIBLE_DEVICES=1,2)
+        vllm = init_vllm(
+            model_id=model_id,
+            seed=42,
+            gpu_memory_utilization=0.75,
+            tensor_parallel_size=1,
+        )
+        evaluate_vllm(
+            vllm,
+            output_path=f"{EVAL_DIR}/{run_id}/before_training.jsonl",
+        )
+    else:
+        vllm = None
 
-    # Use cuda:1 for training model (physical GPU 2 when CUDA_VISIBLE_DEVICES=1,2)
-    device = torch.device("cuda:1" if torch.cuda.device_count() > 1 else "cuda")
-    model = AutoModelForCausalLM.from_pretrained(
-        model_id,
-        torch_dtype=torch.bfloat16,
-        attn_implementation="flash_attention_2",
-    ).to(device)
     tokenizer = AutoTokenizer.from_pretrained(
         model_id,
     )
@@ -103,18 +99,6 @@ def run_sft(
 
     # not sure if we need this but why not
     load_policy_into_vllm_instance(model, vllm)
-
-    # evaluate before training
-    if eval_before_train:
-        evaluate_vllm(
-            vllm,
-            output_path=f"{EVAL_DIR}/{run_id}/before_training.jsonl",
-        )
-
-    # load training data
-    data_loader = get_sft_dataloader(
-        num_rows=training_data_size, batch_size=batch_size, shuffle=False
-    )
 
     # Clear any residual gradients before training
     optimizer.zero_grad()
@@ -155,7 +139,7 @@ def run_sft(
             optimizer.step()
             optimizer.zero_grad()
 
-        if (idx + 1) % eval_frequency == 0:
+        if vllm is not None and (idx + 1) % eval_frequency == 0:
             load_policy_into_vllm_instance(model, vllm)
             evaluate_vllm(
                 vllm,
@@ -171,10 +155,32 @@ def run_sft(
 
 
 if __name__ == "__main__":
+    # Use cuda:1 for training model (physical GPU 2 when CUDA_VISIBLE_DEVICES=1,2)
+    model_id = (
+        "/data/users/hadikotaich/cs336-assignment5-alignment/models/Qwen2.5-Math-1.5B"
+    )
+    device = torch.device("cuda:1" if torch.cuda.device_count() > 1 else "cuda")
+    model = AutoModelForCausalLM.from_pretrained(
+        model_id,
+        torch_dtype=torch.bfloat16,
+        attn_implementation="flash_attention_2",
+    ).to(device)
+    training_data_size = 16384
+    batch_size = 2  # Microbatch size (actual samples processed at once)
+    learning_rate = 0.0001
+    run_id = (
+        f"sft_sz{training_data_size}_lr_{learning_rate}_bs_{batch_size}_"
+        + wandb.util.generate_id()
+    )
+    data_loader = get_sft_dataloader(
+        num_rows=training_data_size, batch_size=batch_size, shuffle=False
+    )
     run_sft(
-        training_data_size=16384,
-        learning_rate=0.0001,
-        batch_size=2,  # Microbatch size (actual samples processed at once)
+        model=model,
+        data_loader=data_loader,
+        model_id=model_id,
+        run_id=run_id,
+        learning_rate=learning_rate,
         eval_frequency=256,
         eval_before_train=True,
         gradient_accumulation_steps=8,  # Accumulate 8 microbatches → effective batch size = 2 * 8 = 16
