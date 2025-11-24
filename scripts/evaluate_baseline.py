@@ -64,34 +64,12 @@ def evaluate_vllm(vllm: LLM, output_path: str) -> None:
         include_stop_str_in_output=True,
     )
 
-    _evaluate_vllm(
-        vllm_model=vllm,
-        reward_fn=r1_zero_reward_fn,
-        prompts=prompts,
-        ground_truths=ground_truths,
-        eval_sampling_params=sampling_params,
-        output_path=output_path,
-    )
-
-
-def _evaluate_vllm(
-    vllm_model: LLM,
-    reward_fn: Callable[[str, str], dict[str, float]],
-    prompts: List[str],
-    ground_truths: List[str],
-    eval_sampling_params: SamplingParams,
-    output_path: str,
-) -> None:
-    """
-    Evaluate a language model on a list of prompts,
-    compute evaluation metrics, and serialize results to disk.
-    """
     batch_size = 1024
     format_reward = 0.0
     answer_reward = 0.0
     reward = 0.0
     start_time = time.time()
-    outputs: list[RequestOutput] = vllm_model.generate(prompts, eval_sampling_params)
+    outputs: list[RequestOutput] = vllm.generate(prompts, sampling_params)
     generation_latency = time.time() - start_time
 
     # Create output directory if it doesn't exist
@@ -109,7 +87,7 @@ def _evaluate_vllm(
                 prompt=prompt,
                 response=response,
                 ground_truth=ground_truth,
-                metrics=reward_fn(response, ground_truth),
+                metrics=r1_zero_reward_fn(response, ground_truth),
             )
 
             format_reward += eval_row.metrics["format_reward"]

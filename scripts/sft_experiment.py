@@ -61,6 +61,7 @@ def load_policy_into_vllm_instance(policy: PreTrainedModel, llm: LLM):
 
 def run_sft(
     model: PreTrainedModel,
+    model_device: torch.device,
     data_loader: DataLoader,
     model_id: str,
     run_id: str,
@@ -69,7 +70,6 @@ def run_sft(
     eval_before_train: bool = False,
     gradient_accumulation_steps: int = 1,
 ):
-    wandb.init(project="sft", id=run_id)
     print(f"run_id: {run_id}")
     if eval_before_train or eval_frequency > 0:
         # Use cuda:0 for vLLM (physical GPU 1 when CUDA_VISIBLE_DEVICES=1,2)
@@ -79,6 +79,8 @@ def run_sft(
             gpu_memory_utilization=0.75,
             tensor_parallel_size=1,
         )
+        # not sure if we need this but why not
+        load_policy_into_vllm_instance(model, vllm)
         evaluate_vllm(
             vllm,
             output_path=f"{EVAL_DIR}/{run_id}/before_training.jsonl",
@@ -97,9 +99,6 @@ def run_sft(
     )
     optimizer.zero_grad()
 
-    # not sure if we need this but why not
-    load_policy_into_vllm_instance(model, vllm)
-
     # Clear any residual gradients before training
     optimizer.zero_grad()
 
@@ -115,7 +114,7 @@ def run_sft(
 
         # Move all tensors to the same device as the model
         tokenization_result = {
-            k: v.to(device) if isinstance(v, torch.Tensor) else v
+            k: v.to(model_device) if isinstance(v, torch.Tensor) else v
             for k, v in tokenization_result.items()
         }
 
@@ -172,11 +171,13 @@ if __name__ == "__main__":
         f"sft_sz{training_data_size}_lr_{learning_rate}_bs_{batch_size}_"
         + wandb.util.generate_id()
     )
+    wandb.init(project="sft", id=run_id)
     data_loader = get_sft_dataloader(
         num_rows=training_data_size, batch_size=batch_size, shuffle=False
     )
     run_sft(
         model=model,
+        device=device,
         data_loader=data_loader,
         model_id=model_id,
         run_id=run_id,
