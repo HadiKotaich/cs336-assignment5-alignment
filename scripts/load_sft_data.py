@@ -77,6 +77,9 @@ class SFTDataset(Dataset):
                         "id": row_id,
                         "prompt": formatted_prompt,
                         "response": formatted_response,
+                        "ground_truth": formatted_response.split("<answer>")[1]
+                        .split("</answer>")[0]
+                        .strip(),
                     }
                 )
                 count += 1
